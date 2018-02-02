@@ -10,6 +10,8 @@ type ResponseWriter interface {
 	// Status returns the status code of the response or 0 if the response has
 	// not been written
 	Status() int
+	// Written returns whether or not the ResponseWriter has been written.
+	Written() bool
 }
 
 // NewResponseWriter creates a ResponseWriter that wraps an http.ResponseWriter
@@ -36,5 +38,12 @@ func (rw *responseWriter) WriteHeader(s int) {
 }
 
 func (rw *responseWriter) Write(b []byte) (int, error) {
+	if !rw.Written() {
+		rw.WriteHeader(http.StatusOK)
+	}
 	return rw.ResponseWriter.Write(b)
+}
+
+func (rw *responseWriter) Written() bool {
+	return rw.status != 0
 }

@@ -6,7 +6,6 @@ import (
 	"net/http"
 
 	log "github.com/sirupsen/logrus"
-	"golang.org/x/net/context"
 )
 
 // RecoverMiddleware revover the error..
@@ -19,17 +18,16 @@ func NewRecoverMiddleware() RecoverMiddleware {
 }
 
 // WrapHandler returns a new handler function wrapping the previous one in the request chain.
-func (l RecoverMiddleware) WrapHandler(handler func(ctx context.Context, w http.ResponseWriter, r *http.Request, vars map[string]string) error) func(ctx context.Context, w http.ResponseWriter, r *http.Request, vars map[string]string) error {
-	return func(ctx context.Context, w http.ResponseWriter, r *http.Request, vars map[string]string) error {
-		defer func() {
-			if err := recover(); err != nil {
-				log.Errorf("panic: %+v", err)
-				errResponse := httputils.SystemError{
-					Message: "System error, please contact the administrator",
-				}
-				httputils.MakeErrorHandler(errResponse)(w, r) // 500
+func (l RecoverMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
+	defer func() {
+		if err := recover(); err != nil {
+			log.Errorf("panic: %+v", err)
+			errResponse := httputils.SystemError{
+				Message: "System error, please contact the administrator",
 			}
-		}()
-		return handler(ctx, w, r, vars)
-	}
+			httputils.MakeErrorHandler(errResponse)(w, r) // 500
+		}
+	}()
+
+	next(w, r)
 }

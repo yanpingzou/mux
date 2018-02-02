@@ -7,10 +7,10 @@ import (
 	"efk/src/server/router/efks"
 	"net/http"
 
-	"golang.org/x/net/context"
-
 	"github.com/gorilla/mux"
-	log "github.com/sirupsen/logrus"
+	"github.com/sirupsen/logrus"
+	"github.com/urfave/negroni"
+	"golang.org/x/net/context"
 )
 
 // versionMatcher defines a variable matcher to be parsed by the router
@@ -27,7 +27,7 @@ type Server struct {
 	addr        string
 	m           *mux.Router
 	routers     []router.Router
-	middlewares []middleware.Middleware
+	middlewares []negroni.Handler
 }
 
 // New returns a new instance of the server based on the specified configuration.
@@ -43,14 +43,17 @@ func (s *Server) accept(addr string) {
 
 //serve starts listening for inbound requests.
 func (s *Server) serve() {
+	chain := negroni.New(s.middlewares...)
+	chain.UseHandler(s.m)
+
 	srv := &http.Server{
 		Addr:    s.addr,
-		Handler: s.m,
+		Handler: chain,
 	}
 
 	go func() {
 		if err := srv.ListenAndServe(); err != nil {
-			log.Fatal(err)
+			logrus.Fatal(err)
 		}
 	}()
 }
@@ -61,7 +64,7 @@ func (s *Server) createMux() *mux.Router {
 	for _, router := range s.routers {
 		for _, route := range router.Routes() {
 			f := s.makeHTTPHandler(route.Handler())
-			log.Debugf("Registering %s, %s", route.Method(), route.Path())
+			logrus.Debugf("Registering %s, %s", route.Method(), route.Path())
 
 			m.PathPrefix(versionMatcher).Path(route.Path()).Methods(route.Method()).Handler(f)
 		}
@@ -79,7 +82,7 @@ func (s *Server) makeHTTPHandler(handler httputils.APIFunc) http.HandlerFunc {
 		// Define the context that we'll pass around to share info
 		ctx := context.WithValue(context.Background(), UAStringKey, r.Header.Get("User-Agent"))
 		// Define middleware
-		handlerFunc := s.handlerWithGlobalMiddlewares(handler)
+		// handlerFunc := s.handlerWithGlobalMiddlewares(handler)
 
 		vars := mux.Vars(r) // only url parameters
 		if vars == nil {
@@ -88,10 +91,10 @@ func (s *Server) makeHTTPHandler(handler httputils.APIFunc) http.HandlerFunc {
 
 		w = httputils.NewResponseWriter(w)
 
-		if err := handlerFunc(ctx, w, r, vars); err != nil {
+		if err := handler(ctx, w, r, vars); err != nil {
 			statusCode := httputils.GetHTTPErrorStatusCode(err)
 			if statusCode >= 500 {
-				log.Errorf("Handler for %s %s returned error: %v", r.Method, r.URL.Path, err)
+				logrus.Errorf("Handler for %s %s returned error: %v", r.Method, r.URL.Path, err)
 			}
 			httputils.MakeErrorHandler(err)(w, r)
 		}
@@ -100,7 +103,7 @@ func (s *Server) makeHTTPHandler(handler httputils.APIFunc) http.HandlerFunc {
 
 // useMiddleware appends a new middleware to the request chain.
 // This needs to be called before the API routes are configured.
-func (s *Server) useMiddleware(m ...middleware.Middleware) {
+func (s *Server) useMiddleware(m ...negroni.Handler) {
 	s.middlewares = append(s.middlewares, m...)
 }
 
@@ -118,10 +121,11 @@ func Init() {
 	s.InitRouter(
 		efks.NewRouter(),
 	)
+
 	s.useMiddleware(
-		middleware.NewCORSMiddleware("*"),
-		middleware.NewRecoverMiddleware(),
 		middleware.NewLoggerMiddleware(),
+		middleware.NewRecoverMiddleware(),
+		middleware.NewCORSMiddleware("*"),
 	)
 	s.serve()
 }
