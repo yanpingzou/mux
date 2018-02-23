@@ -108,7 +108,6 @@ func (s *Server) useMiddleware(m ...negroni.Handler) {
 }
 
 // InitRouter initializes the list of routers for the server.
-// This method also enables the Go profiler if enableProfiler is true.
 func (s *Server) InitRouter(routers ...router.Router) {
 	s.routers = append(s.routers, routers...)
 	s.m = s.createMux()
@@ -118,8 +117,9 @@ func (s *Server) InitRouter(routers ...router.Router) {
 func Init() {
 	s := New()
 	s.accept(":8090")
+
 	s.InitRouter(
-		efks.NewRouter(),
+		efks.NewRouter(), // user routers
 	)
 
 	s.useMiddleware(
@@ -127,5 +127,6 @@ func Init() {
 		middleware.NewRecoverMiddleware(),
 		middleware.NewCORSMiddleware("*"),
 	)
+
 	s.serve()
 }
